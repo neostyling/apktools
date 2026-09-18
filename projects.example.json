@@ -1,0 +1,10 @@
+{
+  "last_project": null,
+  "projects": [
+    {
+      "name": "mon_projet",
+      "build_dir": "C:\\chemin\\vers\\mon_projet\\build\\app\\outputs\\flutter-apk",
+      "device_dest": "/sdcard/Download/mon_projet"
+    }
+  ]
+}
