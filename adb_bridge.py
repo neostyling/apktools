@@ -46,3 +46,25 @@ def push(adb_path: str, serial: str, local_path: str, device_dest: str, timeout:
         text=True,
         timeout=timeout,
     )
+
+
+def list_remote_files(adb_path: str, serial: str, remote_dir: str, timeout: int = 15) -> list[str]:
+    """Liste les noms de fichiers dans `remote_dir` sur l'appareil (vide si le dossier n'existe pas)."""
+    result = subprocess.run(
+        [adb_path, "-s", serial, "shell", f"ls -1 '{remote_dir}' 2>/dev/null"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def rename_remote_file(
+    adb_path: str, serial: str, remote_dir: str, old_name: str, new_name: str, timeout: int = 15
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [adb_path, "-s", serial, "shell", f"mv '{remote_dir}/{old_name}' '{remote_dir}/{new_name}'"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )

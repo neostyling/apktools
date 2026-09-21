@@ -32,6 +32,7 @@ class App(ctk.CTk):
         self.devices: list[tuple[str, str]] = []
         self.selected_serial = tk.StringVar()
         self.selected_apk = tk.StringVar()
+        self.keep_old_var = tk.BooleanVar(value=False)
         self.apk_list_frame: ctk.CTkFrame | None = None
 
         self._build_ui()
@@ -108,19 +109,27 @@ class App(ctk.CTk):
         self.device_menu.grid_remove()
 
         # --- envoi ---
+        self.keep_old_check = ctk.CTkCheckBox(
+            self,
+            text="Garder l'ancienne version sur le telephone (renommee en .oldN)",
+            variable=self.keep_old_var,
+            font=ctk.CTkFont(size=12),
+        )
+        self.keep_old_check.grid(row=5, column=0, sticky="w", padx=20, pady=(0, 10))
+
         self.send_button = ctk.CTkButton(
             self, text="Envoyer", height=40,
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self._on_send,
         )
-        self.send_button.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 10))
+        self.send_button.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 10))
 
         self.progress = ctk.CTkProgressBar(self, mode="indeterminate")
-        self.progress.grid(row=6, column=0, sticky="ew", padx=20)
+        self.progress.grid(row=7, column=0, sticky="ew", padx=20)
         self.progress.grid_remove()
 
         self.status_label = ctk.CTkLabel(self, text="Pret.", anchor="w", text_color=COLOR_MUTED)
-        self.status_label.grid(row=7, column=0, sticky="ew", padx=20, pady=(6, 18))
+        self.status_label.grid(row=8, column=0, sticky="ew", padx=20, pady=(6, 18))
 
         self._update_send_state()
 
@@ -287,40 +296,67 @@ class App(ctk.CTk):
         if not (project and apk_path and serial and self.adb_path):
             return
 
-        device_dest = f"{project['device_dest']}/{Path(apk_path).name}"
+        remote_dir = project["device_dest"]
+        filename = Path(apk_path).name
+        keep_old = self.keep_old_var.get()
+
         self.send_button.configure(state="disabled")
-        self._set_status(f"Envoi en cours vers {device_dest} ...")
+        self._set_status(f"Envoi en cours vers {remote_dir}/{filename} ...")
         self.progress.grid()
         self.progress.start()
 
         thread = threading.Thread(
             target=self._push_worker,
-            args=(self.adb_path, serial, apk_path, device_dest),
+            args=(self.adb_path, serial, apk_path, remote_dir, filename, keep_old),
             daemon=True,
         )
         thread.start()
 
-    def _push_worker(self, adb_path: str, serial: str, apk_path: str, device_dest: str):
+    def _push_worker(
+        self, adb_path: str, serial: str, apk_path: str, remote_dir: str, filename: str, keep_old: bool
+    ):
+        device_dest = f"{remote_dir}/{filename}"
+        renamed_to = None
         try:
+            if keep_old:
+                existing = adb.list_remote_files(adb_path, serial, remote_dir)
+                if filename in existing:
+                    prefix = filename + ".old"
+                    old_numbers = [
+                        int(f[len(prefix):]) for f in existing
+                        if f.startswith(prefix) and f[len(prefix):].isdigit()
+                    ]
+                    renamed_to = f"{prefix}{max(old_numbers, default=0) + 1}"
+                    rename_result = adb.rename_remote_file(adb_path, serial, remote_dir, filename, renamed_to)
+                    if rename_result.returncode != 0:
+                        self.after(
+                            0, self._push_done, False, device_dest,
+                            f"Impossible de renommer l'ancienne version : {rename_result.stderr.strip()}", None,
+                        )
+                        return
+
             result = adb.push(adb_path, serial, apk_path, device_dest)
         except subprocess.TimeoutExpired:
-            self.after(0, self._push_done, False, device_dest, "Envoi expire - verifier la connexion USB.")
+            self.after(0, self._push_done, False, device_dest, "Envoi expire - verifier la connexion USB.", None)
             return
         except (subprocess.SubprocessError, OSError) as exc:
-            self.after(0, self._push_done, False, device_dest, str(exc))
+            self.after(0, self._push_done, False, device_dest, str(exc), None)
             return
 
         if result.returncode != 0:
-            self.after(0, self._push_done, False, device_dest, result.stderr.strip())
+            self.after(0, self._push_done, False, device_dest, result.stderr.strip(), None)
         else:
-            self.after(0, self._push_done, True, device_dest, "")
+            self.after(0, self._push_done, True, device_dest, "", renamed_to)
 
-    def _push_done(self, success: bool, device_dest: str, error: str):
+    def _push_done(self, success: bool, device_dest: str, error: str, renamed_to: str | None):
         self.progress.stop()
         self.progress.grid_remove()
         self.send_button.configure(state="normal")
         if success:
-            self._set_status(f"Envoye vers {device_dest}", "success")
+            if renamed_to:
+                self._set_status(f"Envoye vers {device_dest} (ancienne version gardee sous {renamed_to})", "success")
+            else:
+                self._set_status(f"Envoye vers {device_dest}", "success")
         else:
             self._set_status(f"Echec de l'envoi vers {device_dest}", "error")
             messagebox.showerror("Echec de l'envoi", error or "Erreur inconnue.")

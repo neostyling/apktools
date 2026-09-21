@@ -44,6 +44,19 @@ pour le format) :
 }
 ```
 
+## Garder l'ancienne version
+
+Case à cocher **"Garder l'ancienne version sur le telephone"** au-dessus du
+bouton Envoyer. Par défaut décochée (comportement habituel : `adb push`
+écrase directement le fichier existant au même nom).
+
+Si cochée et qu'un fichier du même nom existe déjà dans le dossier de
+destination sur le téléphone, il est d'abord renommé en `<nom>.oldN` (N =
+nombre de `.old*` déjà présents + 1) avant l'envoi du nouveau build. Permet de
+garder plusieurs versions précédentes côte à côte (`app-release.apk`,
+`app-release.apk.old1`, `app-release.apk.old2`, ...) plutôt que de perdre le
+build précédent à chaque envoi.
+
 ## Connexion au téléphone : USB vs Wi-Fi
 
 Sur cette machine, le débogage **USB** ne fonctionne pas de façon fiable : Windows
